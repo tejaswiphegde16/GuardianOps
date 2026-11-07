@@ -1,0 +1,9 @@
+{
+  "alert_id": "ALERT-2026-1107-001",
+  "service": "checkout-api",
+  "severity": "SEV-1",
+  "category": "db_pool_exhaustion",
+  "summary": "Checkout requests are timing out; all database connections appear checked out.",
+  "logs": "2026-11-07T09:14:22Z checkout-api ERROR db.pool: checkout timed out after 5.0s (pool_size=30, checked_out=30, overflow=0)",
+  "observed_at": "2026-11-07T09:14:22Z"
+}

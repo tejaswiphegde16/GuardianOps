@@ -1,0 +1,19 @@
+{
+  "incident_id": "INC-2026-1107-001",
+  "service": "checkout-api",
+  "category": "db_pool_exhaustion",
+  "summary": "Checkout requests timed out after the database connection pool saturated.",
+  "error_logs": [
+    "checkout-api ERROR db.pool: checkout timed out after 5.0s (pool_size=30, checked_out=30, overflow=0)",
+    "checkout-api WARN http.server: route=/v1/checkout status=503 p95_ms=6200"
+  ],
+  "root_cause": "A connection leak on an exception path left connections checked out after failed inventory lookups.",
+  "resolution_steps": [
+    "Restarted affected checkout workers to release stranded connections and restore service.",
+    "Fixed connection cleanup with a context manager around the inventory lookup transaction.",
+    "Added an alert for pool saturation and a regression test for the exception path."
+  ],
+  "runbooks_that_worked": [
+    "RB-004 Database connection pool exhaustion"
+  ]
+}

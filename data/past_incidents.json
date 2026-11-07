@@ -1,0 +1,1452 @@
+[
+  {
+    "incident_id": "INC-20250108-001",
+    "started_at": "2025-01-08T14:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-2",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "44% of order-db-proxy requests were degraded for approximately 82 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 9922 (order) total-vm:7038039kB, anon-rss:3250230kB, oom_score_adj:0",
+      "2025-01-08T14:00:00.000000Z order-db-proxy ERROR incident signal: oom_kill threshold exceeded; trace_id=fca07f5d1244e52a"
+    ],
+    "root_cause": "streaming export buffered the full result set",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 96,
+      "restart_count": 7
+    },
+    "resolved_at": "2025-01-08T15:22:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250113-002",
+    "started_at": "2025-01-13T20:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "24% of payments-worker requests were degraded for approximately 90 minutes.",
+    "error_logs": [
+      "payments-worker ERROR db.pool: checkout timed out after 12.0s (pool_size=20, checked_out=40, overflow=0)",
+      "2025-01-13T20:00:00.000000Z payments-worker ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=a05e3f8b839fc9cf"
+    ],
+    "root_cause": "slow transaction held connections during downstream calls",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 99,
+      "db_wait_ms": 4903
+    },
+    "resolved_at": "2025-01-13T21:30:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250118-003",
+    "started_at": "2025-01-18T20:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-3",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "10% of checkout-api requests were degraded for approximately 85 minutes.",
+    "error_logs": [
+      "checkout-api WARN http.server: request_id=34bcb3cd6e56b69e route=/v1/orders status=200 duration_ms=11877 upstream=inventory",
+      "2025-01-18T20:00:00.000000Z checkout-api ERROR incident signal: latency_spike threshold exceeded; trace_id=34bcb3cd6e56b69e"
+    ],
+    "root_cause": "missing cache caused a database read surge",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 4397,
+      "error_rate_pct": 27
+    },
+    "resolved_at": "2025-01-18T21:25:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250122-004",
+    "started_at": "2025-01-22T00:00:00+00:00",
+    "service": "catalog-api",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "41% of catalog-api requests were degraded for approximately 50 minutes.",
+    "error_logs": [
+      "2025-01-22T00:00:00+00:00 ip-10-252-2 kubelet[822]: eviction manager: nodefs.available below threshold; available=353Mi, threshold=1024Mi",
+      "2025-01-22T00:00:00.000000Z catalog-api ERROR incident signal: disk_pressure threshold exceeded; trace_id=cefce7b573e00f89"
+    ],
+    "root_cause": "container runtime retained old image layers",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 93,
+      "evicted_pods": 10
+    },
+    "resolved_at": "2025-01-22T00:50:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250128-005",
+    "started_at": "2025-01-28T14:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-2",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "48% of checkout-api requests were degraded for approximately 13 minutes.",
+    "error_logs": [
+      "checkout-api ERROR consumer: partition=22 lag=43112 oldest_message_age=189m delivery_attempt=7 error=upstream_timeout",
+      "2025-01-28T14:00:00.000000Z checkout-api ERROR incident signal: queue_backlog threshold exceeded; trace_id=6e6b6018e1bbf865"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 150775,
+      "oldest_age_min": 154
+    },
+    "resolved_at": "2025-01-28T14:13:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250130-006",
+    "started_at": "2025-01-30T13:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-1",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "46% of order-db-proxy requests were degraded for approximately 41 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 17075 (order) total-vm:7269116kB, anon-rss:3612483kB, oom_score_adj:0",
+      "2025-01-30T13:00:00.000000Z order-db-proxy ERROR incident signal: oom_kill threshold exceeded; trace_id=89d2fcff0346481f"
+    ],
+    "root_cause": "large batch payload retained between queue acknowledgements",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 95,
+      "restart_count": 11
+    },
+    "resolved_at": "2025-01-30T13:41:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250207-007",
+    "started_at": "2025-02-07T07:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-3",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "22% of checkout-api requests were degraded for approximately 43 minutes.",
+    "error_logs": [
+      "checkout-api ERROR db.pool: checkout timed out after 10.4s (pool_size=30, checked_out=20, overflow=0)",
+      "2025-02-07T07:00:00.000000Z checkout-api ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=86819e2f42eec086"
+    ],
+    "root_cause": "pool size below peak worker concurrency",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 96,
+      "db_wait_ms": 7268
+    },
+    "resolved_at": "2025-02-07T07:43:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250212-008",
+    "started_at": "2025-02-12T16:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-3",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "12% of user-service requests were degraded for approximately 28 minutes.",
+    "error_logs": [
+      "user-service WARN http.server: request_id=b2200457dc8d7d01 route=/v1/orders status=504 duration_ms=7323 upstream=inventory",
+      "2025-02-12T16:00:00.000000Z user-service ERROR incident signal: latency_spike threshold exceeded; trace_id=b2200457dc8d7d01"
+    ],
+    "root_cause": "one hot shard increased query and lock duration",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 2640,
+      "error_rate_pct": 21
+    },
+    "resolved_at": "2025-02-12T16:28:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250214-009",
+    "started_at": "2025-02-14T01:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "36% of user-service requests were degraded for approximately 47 minutes.",
+    "error_logs": [
+      "2025-02-14T01:00:00+00:00 ip-10-80-158 kubelet[822]: eviction manager: nodefs.available below threshold; available=379Mi, threshold=1024Mi",
+      "2025-02-14T01:00:00.000000Z user-service ERROR incident signal: disk_pressure threshold exceeded; trace_id=40a2ec49b05b8080"
+    ],
+    "root_cause": "log rotation was disabled after an image change",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 100,
+      "evicted_pods": 10
+    },
+    "resolved_at": "2025-02-14T01:47:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250222-010",
+    "started_at": "2025-02-22T06:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-3",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "12% of checkout-api requests were degraded for approximately 36 minutes.",
+    "error_logs": [
+      "checkout-api ERROR consumer: partition=2 lag=34796 oldest_message_age=147m delivery_attempt=5 error=upstream_timeout",
+      "2025-02-22T06:00:00.000000Z checkout-api ERROR incident signal: queue_backlog threshold exceeded; trace_id=18fdc1eb763afb6b"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 54814,
+      "oldest_age_min": 31
+    },
+    "resolved_at": "2025-02-22T06:36:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250224-011",
+    "started_at": "2025-02-24T21:00:00+00:00",
+    "service": "catalog-api",
+    "severity": "SEV-2",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "55% of catalog-api requests were degraded for approximately 25 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 50324 (catalog) total-vm:5813778kB, anon-rss:3027031kB, oom_score_adj:0",
+      "2025-02-24T21:00:00.000000Z catalog-api ERROR incident signal: oom_kill threshold exceeded; trace_id=b370cc5c50e3b2d9"
+    ],
+    "root_cause": "large batch payload retained between queue acknowledgements",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 99,
+      "restart_count": 3
+    },
+    "resolved_at": "2025-02-24T21:25:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250302-012",
+    "started_at": "2025-03-02T15:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "30% of payments-worker requests were degraded for approximately 89 minutes.",
+    "error_logs": [
+      "payments-worker ERROR db.pool: checkout timed out after 2.4s (pool_size=30, checked_out=40, overflow=0)",
+      "2025-03-02T15:00:00.000000Z payments-worker ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=6ba4048099386374"
+    ],
+    "root_cause": "pool size below peak worker concurrency",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 100,
+      "db_wait_ms": 11054
+    },
+    "resolved_at": "2025-03-02T16:29:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250309-013",
+    "started_at": "2025-03-09T20:00:00+00:00",
+    "service": "catalog-api",
+    "severity": "SEV-2",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "34% of catalog-api requests were degraded for approximately 69 minutes.",
+    "error_logs": [
+      "catalog-api WARN http.server: request_id=47e59d48011ed69a route=/v1/checkout status=200 duration_ms=5912 upstream=redis-cache",
+      "2025-03-09T20:00:00.000000Z catalog-api ERROR incident signal: latency_spike threshold exceeded; trace_id=47e59d48011ed69a"
+    ],
+    "root_cause": "retry amplification against a degraded dependency",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 4092,
+      "error_rate_pct": 18
+    },
+    "resolved_at": "2025-03-09T21:09:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250312-014",
+    "started_at": "2025-03-12T14:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-3",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "63% of payments-worker requests were degraded for approximately 63 minutes.",
+    "error_logs": [
+      "2025-03-12T14:00:00+00:00 ip-10-183-34 kubelet[822]: eviction manager: nodefs.available below threshold; available=147Mi, threshold=1024Mi",
+      "2025-03-12T14:00:00.000000Z payments-worker ERROR incident signal: disk_pressure threshold exceeded; trace_id=3b6cbd2fa8d983d7"
+    ],
+    "root_cause": "log rotation was disabled after an image change",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 100,
+      "evicted_pods": 8
+    },
+    "resolved_at": "2025-03-12T15:03:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250317-015",
+    "started_at": "2025-03-17T11:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-1",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "69% of order-db-proxy requests were degraded for approximately 83 minutes.",
+    "error_logs": [
+      "order-db-proxy ERROR consumer: partition=17 lag=227436 oldest_message_age=188m delivery_attempt=9 error=upstream_timeout",
+      "2025-03-17T11:00:00.000000Z order-db-proxy ERROR incident signal: queue_backlog threshold exceeded; trace_id=feacc29e7dd78be5"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 62333,
+      "oldest_age_min": 77
+    },
+    "resolved_at": "2025-03-17T12:23:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250323-016",
+    "started_at": "2025-03-23T18:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-1",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "21% of checkout-api requests were degraded for approximately 62 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 39984 (checkout) total-vm:7149416kB, anon-rss:3694275kB, oom_score_adj:0",
+      "2025-03-23T18:00:00.000000Z checkout-api ERROR incident signal: oom_kill threshold exceeded; trace_id=8e2aff6e1fe78c4f"
+    ],
+    "root_cause": "large batch payload retained between queue acknowledgements",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 95,
+      "restart_count": 16
+    },
+    "resolved_at": "2025-03-23T19:02:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250326-017",
+    "started_at": "2025-03-26T08:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-1",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "33% of user-service requests were degraded for approximately 89 minutes.",
+    "error_logs": [
+      "user-service ERROR db.pool: checkout timed out after 4.5s (pool_size=30, checked_out=30, overflow=0)",
+      "2025-03-26T08:00:00.000000Z user-service ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=f75284d30f1a6d23"
+    ],
+    "root_cause": "connection leak on exception path",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 96,
+      "db_wait_ms": 6672
+    },
+    "resolved_at": "2025-03-26T09:29:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250401-018",
+    "started_at": "2025-04-01T10:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "12% of user-service requests were degraded for approximately 47 minutes.",
+    "error_logs": [
+      "user-service WARN http.server: request_id=72174905ce40ee5c route=/v1/orders status=503 duration_ms=4194 upstream=redis-cache",
+      "2025-04-01T10:00:00.000000Z user-service ERROR incident signal: latency_spike threshold exceeded; trace_id=72174905ce40ee5c"
+    ],
+    "root_cause": "one hot shard increased query and lock duration",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 8528,
+      "error_rate_pct": 25
+    },
+    "resolved_at": "2025-04-01T10:47:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250408-019",
+    "started_at": "2025-04-08T17:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "50% of payments-worker requests were degraded for approximately 72 minutes.",
+    "error_logs": [
+      "2025-04-08T17:00:00+00:00 ip-10-97-158 kubelet[822]: eviction manager: nodefs.available below threshold; available=608Mi, threshold=1024Mi",
+      "2025-04-08T17:00:00.000000Z payments-worker ERROR incident signal: disk_pressure threshold exceeded; trace_id=eb53208a45aac78b"
+    ],
+    "root_cause": "temporary exports were not removed",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 96,
+      "evicted_pods": 2
+    },
+    "resolved_at": "2025-04-08T18:12:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250410-020",
+    "started_at": "2025-04-10T05:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "38% of payments-worker requests were degraded for approximately 93 minutes.",
+    "error_logs": [
+      "payments-worker ERROR consumer: partition=9 lag=204009 oldest_message_age=57m delivery_attempt=7 error=upstream_timeout",
+      "2025-04-10T05:00:00.000000Z payments-worker ERROR incident signal: queue_backlog threshold exceeded; trace_id=dc51f2d5e9dbd6c2"
+    ],
+    "root_cause": "poison messages retried without a dead-letter limit",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 235782,
+      "oldest_age_min": 152
+    },
+    "resolved_at": "2025-04-10T06:33:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250416-021",
+    "started_at": "2025-04-16T21:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "9% of payments-worker requests were degraded for approximately 75 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 36112 (payments) total-vm:7950257kB, anon-rss:967200kB, oom_score_adj:0",
+      "2025-04-16T21:00:00.000000Z payments-worker ERROR incident signal: oom_kill threshold exceeded; trace_id=c9acc3c9fa000d79"
+    ],
+    "root_cause": "large batch payload retained between queue acknowledgements",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 99,
+      "restart_count": 18
+    },
+    "resolved_at": "2025-04-16T22:15:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250422-022",
+    "started_at": "2025-04-22T12:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "68% of user-service requests were degraded for approximately 42 minutes.",
+    "error_logs": [
+      "user-service ERROR db.pool: checkout timed out after 6.4s (pool_size=20, checked_out=40, overflow=0)",
+      "2025-04-22T12:00:00.000000Z user-service ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=613661402d517918"
+    ],
+    "root_cause": "pool size below peak worker concurrency",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 100,
+      "db_wait_ms": 6069
+    },
+    "resolved_at": "2025-04-22T12:42:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250428-023",
+    "started_at": "2025-04-28T20:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "20% of user-service requests were degraded for approximately 57 minutes.",
+    "error_logs": [
+      "user-service WARN http.server: request_id=de284014bb63a922 route=/v1/orders status=503 duration_ms=4372 upstream=redis-cache",
+      "2025-04-28T20:00:00.000000Z user-service ERROR incident signal: latency_spike threshold exceeded; trace_id=de284014bb63a922"
+    ],
+    "root_cause": "one hot shard increased query and lock duration",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 6495,
+      "error_rate_pct": 5
+    },
+    "resolved_at": "2025-04-28T20:57:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250502-024",
+    "started_at": "2025-05-02T18:00:00+00:00",
+    "service": "catalog-api",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "50% of catalog-api requests were degraded for approximately 81 minutes.",
+    "error_logs": [
+      "2025-05-02T18:00:00+00:00 ip-10-13-132 kubelet[822]: eviction manager: nodefs.available below threshold; available=823Mi, threshold=1024Mi",
+      "2025-05-02T18:00:00.000000Z catalog-api ERROR incident signal: disk_pressure threshold exceeded; trace_id=18815cfaca69efb2"
+    ],
+    "root_cause": "temporary exports were not removed",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 100,
+      "evicted_pods": 2
+    },
+    "resolved_at": "2025-05-02T19:21:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250507-025",
+    "started_at": "2025-05-07T21:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-3",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "36% of order-db-proxy requests were degraded for approximately 17 minutes.",
+    "error_logs": [
+      "order-db-proxy ERROR consumer: partition=4 lag=88953 oldest_message_age=92m delivery_attempt=11 error=upstream_timeout",
+      "2025-05-07T21:00:00.000000Z order-db-proxy ERROR incident signal: queue_backlog threshold exceeded; trace_id=84722457038a5609"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 124653,
+      "oldest_age_min": 67
+    },
+    "resolved_at": "2025-05-07T21:17:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250513-026",
+    "started_at": "2025-05-13T08:00:00+00:00",
+    "service": "catalog-api",
+    "severity": "SEV-1",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "33% of catalog-api requests were degraded for approximately 33 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 24555 (catalog) total-vm:6904023kB, anon-rss:3443026kB, oom_score_adj:0",
+      "2025-05-13T08:00:00.000000Z catalog-api ERROR incident signal: oom_kill threshold exceeded; trace_id=76982247eab7b7d6"
+    ],
+    "root_cause": "streaming export buffered the full result set",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 97,
+      "restart_count": 13
+    },
+    "resolved_at": "2025-05-13T08:33:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250515-027",
+    "started_at": "2025-05-15T04:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "69% of order-db-proxy requests were degraded for approximately 94 minutes.",
+    "error_logs": [
+      "order-db-proxy ERROR db.pool: checkout timed out after 3.9s (pool_size=20, checked_out=20, overflow=0)",
+      "2025-05-15T04:00:00.000000Z order-db-proxy ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=1bfdca09392457a0"
+    ],
+    "root_cause": "slow transaction held connections during downstream calls",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 100,
+      "db_wait_ms": 10097
+    },
+    "resolved_at": "2025-05-15T05:34:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250520-028",
+    "started_at": "2025-05-20T19:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "46% of user-service requests were degraded for approximately 67 minutes.",
+    "error_logs": [
+      "user-service WARN http.server: request_id=e3ba6fc4c89e6168 route=/v1/checkout status=504 duration_ms=4639 upstream=inventory",
+      "2025-05-20T19:00:00.000000Z user-service ERROR incident signal: latency_spike threshold exceeded; trace_id=e3ba6fc4c89e6168"
+    ],
+    "root_cause": "retry amplification against a degraded dependency",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 2313,
+      "error_rate_pct": 22
+    },
+    "resolved_at": "2025-05-20T20:07:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250528-029",
+    "started_at": "2025-05-28T18:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "24% of user-service requests were degraded for approximately 71 minutes.",
+    "error_logs": [
+      "2025-05-28T18:00:00+00:00 ip-10-42-157 kubelet[822]: eviction manager: nodefs.available below threshold; available=473Mi, threshold=1024Mi",
+      "2025-05-28T18:00:00.000000Z user-service ERROR incident signal: disk_pressure threshold exceeded; trace_id=43376447220a3334"
+    ],
+    "root_cause": "container runtime retained old image layers",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 98,
+      "evicted_pods": 2
+    },
+    "resolved_at": "2025-05-28T19:11:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250531-030",
+    "started_at": "2025-05-31T11:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-2",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "10% of checkout-api requests were degraded for approximately 62 minutes.",
+    "error_logs": [
+      "checkout-api ERROR consumer: partition=15 lag=148667 oldest_message_age=23m delivery_attempt=4 error=upstream_timeout",
+      "2025-05-31T11:00:00.000000Z checkout-api ERROR incident signal: queue_backlog threshold exceeded; trace_id=5885bf8591f9ce2d"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 34010,
+      "oldest_age_min": 20
+    },
+    "resolved_at": "2025-05-31T12:02:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250607-031",
+    "started_at": "2025-06-07T02:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-2",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "36% of checkout-api requests were degraded for approximately 61 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 14039 (checkout) total-vm:1185557kB, anon-rss:939649kB, oom_score_adj:0",
+      "2025-06-07T02:00:00.000000Z checkout-api ERROR incident signal: oom_kill threshold exceeded; trace_id=77cabd4a2de624ef"
+    ],
+    "root_cause": "streaming export buffered the full result set",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 91,
+      "restart_count": 13
+    },
+    "resolved_at": "2025-06-07T03:01:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250611-032",
+    "started_at": "2025-06-11T13:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "18% of checkout-api requests were degraded for approximately 59 minutes.",
+    "error_logs": [
+      "checkout-api ERROR db.pool: checkout timed out after 2.8s (pool_size=40, checked_out=20, overflow=0)",
+      "2025-06-11T13:00:00.000000Z checkout-api ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=9c1c6acc38e93629"
+    ],
+    "root_cause": "connection leak on exception path",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 97,
+      "db_wait_ms": 5768
+    },
+    "resolved_at": "2025-06-11T13:59:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250614-033",
+    "started_at": "2025-06-14T08:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "32% of payments-worker requests were degraded for approximately 27 minutes.",
+    "error_logs": [
+      "payments-worker WARN http.server: request_id=a2908add6a911786 route=/v1/checkout status=200 duration_ms=10250 upstream=inventory",
+      "2025-06-14T08:00:00.000000Z payments-worker ERROR incident signal: latency_spike threshold exceeded; trace_id=a2908add6a911786"
+    ],
+    "root_cause": "missing cache caused a database read surge",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 2141,
+      "error_rate_pct": 37
+    },
+    "resolved_at": "2025-06-14T08:27:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250619-034",
+    "started_at": "2025-06-19T21:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "28% of payments-worker requests were degraded for approximately 76 minutes.",
+    "error_logs": [
+      "2025-06-19T21:00:00+00:00 ip-10-164-176 kubelet[822]: eviction manager: nodefs.available below threshold; available=511Mi, threshold=1024Mi",
+      "2025-06-19T21:00:00.000000Z payments-worker ERROR incident signal: disk_pressure threshold exceeded; trace_id=337c92294c203a5e"
+    ],
+    "root_cause": "temporary exports were not removed",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 93,
+      "evicted_pods": 2
+    },
+    "resolved_at": "2025-06-19T22:16:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250624-035",
+    "started_at": "2025-06-24T12:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-1",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "55% of checkout-api requests were degraded for approximately 59 minutes.",
+    "error_logs": [
+      "checkout-api ERROR consumer: partition=16 lag=28833 oldest_message_age=138m delivery_attempt=6 error=upstream_timeout",
+      "2025-06-24T12:00:00.000000Z checkout-api ERROR incident signal: queue_backlog threshold exceeded; trace_id=668212ce1ce81368"
+    ],
+    "root_cause": "poison messages retried without a dead-letter limit",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 53370,
+      "oldest_age_min": 82
+    },
+    "resolved_at": "2025-06-24T12:59:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250701-036",
+    "started_at": "2025-07-01T17:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-3",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "54% of checkout-api requests were degraded for approximately 30 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 17068 (checkout) total-vm:7429491kB, anon-rss:1444049kB, oom_score_adj:0",
+      "2025-07-01T17:00:00.000000Z checkout-api ERROR incident signal: oom_kill threshold exceeded; trace_id=e90a7a4815bb33ca"
+    ],
+    "root_cause": "large batch payload retained between queue acknowledgements",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 91,
+      "restart_count": 5
+    },
+    "resolved_at": "2025-07-01T17:30:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250707-037",
+    "started_at": "2025-07-07T16:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "47% of user-service requests were degraded for approximately 79 minutes.",
+    "error_logs": [
+      "user-service ERROR db.pool: checkout timed out after 7.1s (pool_size=40, checked_out=40, overflow=0)",
+      "2025-07-07T16:00:00.000000Z user-service ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=f548a3f4b8d5885e"
+    ],
+    "root_cause": "slow transaction held connections during downstream calls",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 96,
+      "db_wait_ms": 6327
+    },
+    "resolved_at": "2025-07-07T17:19:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250709-038",
+    "started_at": "2025-07-09T11:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-1",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "16% of payments-worker requests were degraded for approximately 65 minutes.",
+    "error_logs": [
+      "payments-worker WARN http.server: request_id=f853b1e5e0108dc0 route=/v1/checkout status=503 duration_ms=6218 upstream=redis-cache",
+      "2025-07-09T11:00:00.000000Z payments-worker ERROR incident signal: latency_spike threshold exceeded; trace_id=f853b1e5e0108dc0"
+    ],
+    "root_cause": "missing cache caused a database read surge",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 2771,
+      "error_rate_pct": 10
+    },
+    "resolved_at": "2025-07-09T12:05:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250714-039",
+    "started_at": "2025-07-14T14:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-3",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "70% of user-service requests were degraded for approximately 50 minutes.",
+    "error_logs": [
+      "2025-07-14T14:00:00+00:00 ip-10-79-203 kubelet[822]: eviction manager: nodefs.available below threshold; available=179Mi, threshold=1024Mi",
+      "2025-07-14T14:00:00.000000Z user-service ERROR incident signal: disk_pressure threshold exceeded; trace_id=58321696156876e4"
+    ],
+    "root_cause": "container runtime retained old image layers",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 98,
+      "evicted_pods": 5
+    },
+    "resolved_at": "2025-07-14T14:50:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250720-040",
+    "started_at": "2025-07-20T18:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-1",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "65% of order-db-proxy requests were degraded for approximately 88 minutes.",
+    "error_logs": [
+      "order-db-proxy ERROR consumer: partition=2 lag=235257 oldest_message_age=75m delivery_attempt=6 error=upstream_timeout",
+      "2025-07-20T18:00:00.000000Z order-db-proxy ERROR incident signal: queue_backlog threshold exceeded; trace_id=13b269222b19885d"
+    ],
+    "root_cause": "consumer throughput fell after a downstream timeout change",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 65578,
+      "oldest_age_min": 39
+    },
+    "resolved_at": "2025-07-20T19:28:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250725-041",
+    "started_at": "2025-07-25T01:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-3",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "54% of payments-worker requests were degraded for approximately 48 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 26170 (payments) total-vm:7988793kB, anon-rss:938568kB, oom_score_adj:0",
+      "2025-07-25T01:00:00.000000Z payments-worker ERROR incident signal: oom_kill threshold exceeded; trace_id=ee04375daa6455d3"
+    ],
+    "root_cause": "streaming export buffered the full result set",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 99,
+      "restart_count": 6
+    },
+    "resolved_at": "2025-07-25T01:48:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250731-042",
+    "started_at": "2025-07-31T10:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-2",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "69% of order-db-proxy requests were degraded for approximately 74 minutes.",
+    "error_logs": [
+      "order-db-proxy ERROR db.pool: checkout timed out after 12.4s (pool_size=30, checked_out=40, overflow=0)",
+      "2025-07-31T10:00:00.000000Z order-db-proxy ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=6d2577c7fa495cc5"
+    ],
+    "root_cause": "pool size below peak worker concurrency",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 97,
+      "db_wait_ms": 2975
+    },
+    "resolved_at": "2025-07-31T11:14:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250804-043",
+    "started_at": "2025-08-04T10:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-1",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "13% of user-service requests were degraded for approximately 13 minutes.",
+    "error_logs": [
+      "user-service WARN http.server: request_id=d2569d18f524a67e route=/v1/checkout status=200 duration_ms=5244 upstream=redis-cache",
+      "2025-08-04T10:00:00.000000Z user-service ERROR incident signal: latency_spike threshold exceeded; trace_id=d2569d18f524a67e"
+    ],
+    "root_cause": "one hot shard increased query and lock duration",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 6795,
+      "error_rate_pct": 23
+    },
+    "resolved_at": "2025-08-04T10:13:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250811-044",
+    "started_at": "2025-08-11T05:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "23% of order-db-proxy requests were degraded for approximately 59 minutes.",
+    "error_logs": [
+      "2025-08-11T05:00:00+00:00 ip-10-55-63 kubelet[822]: eviction manager: nodefs.available below threshold; available=736Mi, threshold=1024Mi",
+      "2025-08-11T05:00:00.000000Z order-db-proxy ERROR incident signal: disk_pressure threshold exceeded; trace_id=ba84dd3ff7153911"
+    ],
+    "root_cause": "temporary exports were not removed",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 95,
+      "evicted_pods": 1
+    },
+    "resolved_at": "2025-08-11T05:59:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250814-045",
+    "started_at": "2025-08-14T15:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-3",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "24% of user-service requests were degraded for approximately 51 minutes.",
+    "error_logs": [
+      "user-service ERROR consumer: partition=22 lag=218199 oldest_message_age=40m delivery_attempt=11 error=upstream_timeout",
+      "2025-08-14T15:00:00.000000Z user-service ERROR incident signal: queue_backlog threshold exceeded; trace_id=a3de6d4acbe4e097"
+    ],
+    "root_cause": "poison messages retried without a dead-letter limit",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 238646,
+      "oldest_age_min": 63
+    },
+    "resolved_at": "2025-08-14T15:51:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250821-046",
+    "started_at": "2025-08-21T00:00:00+00:00",
+    "service": "order-db-proxy",
+    "severity": "SEV-1",
+    "category": "oom_kill",
+    "summary": "container memory climbed steadily until the kernel killed the process",
+    "impact": "38% of order-db-proxy requests were degraded for approximately 36 minutes.",
+    "error_logs": [
+      "kernel: Memory cgroup out of memory: Killed process 36353 (order) total-vm:6360408kB, anon-rss:2329496kB, oom_score_adj:0",
+      "2025-08-21T00:00:00.000000Z order-db-proxy ERROR incident signal: oom_kill threshold exceeded; trace_id=91c6181e921bcc5d"
+    ],
+    "root_cause": "unbounded in-memory response cache",
+    "resolution_steps": [
+      "Rolled back the last memory-heavy release and restarted affected replicas.",
+      "Reduced batch size and bounded the response cache with an eviction limit.",
+      "Added a memory limit alert at 75% and a load test for large payloads."
+    ],
+    "runbooks_that_worked": [
+      "RB-017 Container OOM and memory pressure",
+      "RB-031 Worker backlog and batch sizing"
+    ],
+    "metrics_at_peak": {
+      "memory_pct": 93,
+      "restart_count": 5
+    },
+    "resolved_at": "2025-08-21T00:36:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250823-047",
+    "started_at": "2025-08-23T07:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-3",
+    "category": "db_pool_exhaustion",
+    "summary": "requests stalled while all database connections remained checked out",
+    "impact": "13% of checkout-api requests were degraded for approximately 84 minutes.",
+    "error_logs": [
+      "checkout-api ERROR db.pool: checkout timed out after 9.2s (pool_size=40, checked_out=40, overflow=0)",
+      "2025-08-23T07:00:00.000000Z checkout-api ERROR incident signal: db_pool_exhaustion threshold exceeded; trace_id=eaca8a98dc3e1689"
+    ],
+    "root_cause": "connection leak on exception path",
+    "resolution_steps": [
+      "Raised the pool checkout timeout briefly to drain the queue and restarted leaking workers.",
+      "Fixed connection cleanup with a context manager and capped concurrent database work.",
+      "Added pool saturation and checkout-wait alerts; reviewed slow query traces."
+    ],
+    "runbooks_that_worked": [
+      "RB-004 Database connection pool exhaustion",
+      "RB-022 Slow query and lock investigation"
+    ],
+    "metrics_at_peak": {
+      "pool_used_pct": 97,
+      "db_wait_ms": 5095
+    },
+    "resolved_at": "2025-08-23T08:24:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250831-048",
+    "started_at": "2025-08-31T22:00:00+00:00",
+    "service": "payments-worker",
+    "severity": "SEV-3",
+    "category": "latency_spike",
+    "summary": "p95 request latency rose sharply while upstream calls accumulated retries",
+    "impact": "16% of payments-worker requests were degraded for approximately 87 minutes.",
+    "error_logs": [
+      "payments-worker WARN http.server: request_id=5ca696fb9f806fd8 route=/v2/items status=504 duration_ms=1869 upstream=postgres-primary",
+      "2025-08-31T22:00:00.000000Z payments-worker ERROR incident signal: latency_spike threshold exceeded; trace_id=5ca696fb9f806fd8"
+    ],
+    "root_cause": "missing cache caused a database read surge",
+    "resolution_steps": [
+      "Disabled the aggressive retry policy and shed non-critical traffic.",
+      "Restored the affected cache path and invalidated stale entries safely.",
+      "Moved traffic away from the hot shard and added a latency budget alert."
+    ],
+    "runbooks_that_worked": [
+      "RB-009 Elevated API latency",
+      "RB-026 Dependency timeout and retry storm"
+    ],
+    "metrics_at_peak": {
+      "p95_ms": 9188,
+      "error_rate_pct": 16
+    },
+    "resolved_at": "2025-08-31T23:27:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250905-049",
+    "started_at": "2025-09-05T12:00:00+00:00",
+    "service": "user-service",
+    "severity": "SEV-2",
+    "category": "disk_pressure",
+    "summary": "nodes became unhealthy after application and container logs filled the filesystem",
+    "impact": "30% of user-service requests were degraded for approximately 41 minutes.",
+    "error_logs": [
+      "2025-09-05T12:00:00+00:00 ip-10-98-46 kubelet[822]: eviction manager: nodefs.available below threshold; available=170Mi, threshold=1024Mi",
+      "2025-09-05T12:00:00.000000Z user-service ERROR incident signal: disk_pressure threshold exceeded; trace_id=06a137b7975ede33"
+    ],
+    "root_cause": "container runtime retained old image layers",
+    "resolution_steps": [
+      "Freed space from rotated logs and stale container layers.",
+      "Restored size-based log rotation and cleaned temporary export files.",
+      "Added a node filesystem alert and a retention policy for generated artifacts."
+    ],
+    "runbooks_that_worked": [
+      "RB-013 Node disk pressure and eviction",
+      "RB-035 Log retention and rotation"
+    ],
+    "metrics_at_peak": {
+      "disk_used_pct": 95,
+      "evicted_pods": 5
+    },
+    "resolved_at": "2025-09-05T12:41:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  },
+  {
+    "incident_id": "INC-20250909-050",
+    "started_at": "2025-09-09T07:00:00+00:00",
+    "service": "checkout-api",
+    "severity": "SEV-2",
+    "category": "queue_backlog",
+    "summary": "consumer lag grew continuously and order processing missed its SLO",
+    "impact": "21% of checkout-api requests were degraded for approximately 59 minutes.",
+    "error_logs": [
+      "checkout-api ERROR consumer: partition=3 lag=77224 oldest_message_age=102m delivery_attempt=3 error=upstream_timeout",
+      "2025-09-09T07:00:00.000000Z checkout-api ERROR incident signal: queue_backlog threshold exceeded; trace_id=892a95496f7079fd"
+    ],
+    "root_cause": "consumer deployment reduced concurrency unexpectedly",
+    "resolution_steps": [
+      "Paused the poison-message partition and replayed valid messages from the last checkpoint.",
+      "Restored safe consumer concurrency and rate-limited retries with backoff.",
+      "Added lag and oldest-message-age alerts plus a bounded dead-letter queue."
+    ],
+    "runbooks_that_worked": [
+      "RB-031 Worker backlog and batch sizing",
+      "RB-028 Queue poison message recovery"
+    ],
+    "metrics_at_peak": {
+      "consumer_lag": 15207,
+      "oldest_age_min": 170
+    },
+    "resolved_at": "2025-09-09T07:59:00+00:00",
+    "follow_up": "Owner assigned to add regression coverage, alerting, and a documented rollback check."
+  }
+]
