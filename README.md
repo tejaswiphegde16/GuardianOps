@@ -1,8 +1,9 @@
 # Incident Response Agent
 
-A small Python command-line prototype that recalls prior incident resolutions,
-suggests relevant runbooks, and learns from reviewed postmortems. It uses only
-the Python standard library and stores its mock memory in a local JSON file.
+A terminal incident-response prototype that stores and retrieves incident
+memories with Vectorize Hindsight Cloud, then uses Gemini to generate incident
+analysis grounded in those memories. An optional local JSON mock supports
+offline memory development.
 
 ## Requirements
 
@@ -14,16 +15,28 @@ environment or dependency installation.
 
 ## Quick start
 
-The synthetic corpus and example alert/postmortem are included. Seed memory,
-then query it with the included alert:
+Create a memory bank in Hindsight Cloud and put its bank ID and API key in
+`.env` as described below. Then seed the synthetic incident corpus and query
+the included alert:
 
 ```bash
 python3 incident_response.py seed
 python3 incident_response.py respond alert.json
 ```
 
-The response is JSON with similar incidents, likely root causes, runbooks that
-worked, and suggested actions. The agent does not execute remediation actions.
+The response uses Hindsight recall to return similar incidents, likely causes,
+runbooks, and suggested actions. The agent does not execute remediation actions.
+
+For Gemini to analyze the alert and the memories recalled from Hindsight, pass
+`--llm`:
+
+```bash
+python3 incident_response.py respond alert.json --llm
+```
+
+The alert and recalled memories are sent to Gemini. Remove secrets and sensitive
+customer data before submitting them. Gemini's response is advisory and does not
+execute infrastructure changes.
 
 After an incident, review and edit `postmortem.json`, then persist its verified
 root cause and resolution:
@@ -33,10 +46,10 @@ python3 incident_response.py learn postmortem.json
 python3 incident_response.py respond alert.json
 ```
 
-Memory is stored in `data/hindsight_memory.json` and survives process restarts.
-Seeding the same incident corpus repeatedly replaces matching seeded entries
-instead of adding duplicates. Learning a postmortem with the same ID replaces
-its prior learned entry.
+With Hindsight configured, memory is stored in your Hindsight Cloud bank and
+persists across runs. With `--local`, it is stored in
+`data/hindsight_memory.json`; local entries with matching source and incident ID
+are replaced when learned again.
 
 ## Generate synthetic incident history
 
@@ -73,23 +86,55 @@ key is accepted as an alias for `runbooks_that_worked`.
 ```text
 python3 incident_response.py [--memory PATH] seed [INCIDENTS_JSON]
 python3 incident_response.py [--memory PATH] respond ALERT_JSON [--limit N]
+python3 incident_response.py [--memory PATH] respond ALERT_JSON --llm
 python3 incident_response.py [--memory PATH] learn POSTMORTEM_JSON
 ```
 
 `--memory` selects an alternate local memory file. `respond --limit 0` is useful
 for checking the alert output shape without returning matches.
 
-## Hindsight integration boundary
+## API configuration
 
-`LocalHindsightClient` provides `recall(query, limit)` and `retain(memory)` as a
-local stand-in. Recall currently ranks memories using token overlap and a
-category match; it is not semantic vector search. Replace this adapter's two
-methods with the Vectorize Hindsight SDK or REST calls to connect real Hindsight
-memory, while keeping the incident loop and postmortem-learning flow intact.
-The Hindsight endpoint, credentials, and exact SDK calls are intentionally not
-assumed in this self-contained mock.
+Open the [Hindsight Cloud console](https://ui.hindsight.vectorize.io) to create
+or manage your memory bank and Hindsight API key. Create a Gemini API key in
+[Google AI Studio](https://aistudio.google.com) as well. Put both providers'
+credentials and settings in the project-root `.env` file:
 
-The local memory format is:
+```env
+HINDSIGHT_API_KEY=your-hindsight-api-key
+HINDSIGHT_API_URL=https://api.hindsight.vectorize.io
+HINDSIGHT_BANK_ID=your-memory-bank-id
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+The script reads `.env` using Python's standard library; no dotenv package is
+needed. Hindsight's key authenticates memory retain and recall requests;
+Gemini's key is used only for language generation when `--llm` is passed. Keep
+`.env` out of version control. `HINDSIGHT_API_URL` is optional for a dedicated
+deployment. `GEMINI_MODEL` is optional and defaults to `gemini-3.8-flash`.
+Gemini's free-tier quota is limited, and Google may use free-tier prompts to
+improve its products. Use synthetic or redacted incident data.
+
+When `HINDSIGHT_API_KEY` is configured, commands use Hindsight Cloud. Without
+it, they use a local JSON mock. Use `--local` before the subcommand to force the
+mock, for example `python3 incident_response.py --local seed`.
+
+`HindsightRESTClient` calls Hindsight Cloud's retain and recall endpoints with
+the configured API key and bank ID. `ask_gemini` sends the current alert and
+recalled memories to Gemini's Interactions API using Python's standard-library
+HTTP client. [Gemini API keys](https://ai.google.dev/gemini-api/docs/api-key),
+[Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview),
+and [Hindsight API
+Integration](https://docs.hindsight.vectorize.io/cloud/api-integration/),
+[Hindsight Recall](https://docs.hindsight.vectorize.io/cloud/recall/).
+
+Historical incidents and postmortems are retained as text plus context metadata.
+Hindsight performs semantic, keyword, entity, and temporal retrieval. The local
+mock remains available for offline development; it ranks by token overlap and
+is not a substitute for Hindsight retrieval.
+
+The local mock memory format is:
 
 ```json
 {
@@ -107,5 +152,3 @@ The local memory format is:
   ]
 }
 ```
-
-# GuardianOps
