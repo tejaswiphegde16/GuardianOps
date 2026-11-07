@@ -7,11 +7,15 @@ offline memory development.
 
 ## Requirements
 
-- Python 3.9 or newer
-- No third-party packages
+- Python 3.11 or newer
+- The `google-genai` package listed in `requirements.txt`
 
-Run all commands from this project directory. The scripts do not need a virtual
-environment or dependency installation.
+From the project directory, install the dependency in your active virtual
+environment:
+
+```bash
+python -m pip install -r requirements.txt
+```
 
 ## Quick start
 
@@ -109,8 +113,9 @@ GEMINI_MODEL=gemini-3.8-flash
 ```
 
 The script reads `.env` using Python's standard library; no dotenv package is
-needed. Hindsight's key authenticates memory retain and recall requests;
-Gemini's key is used only for language generation when `--llm` is passed. Keep
+needed. Gemini generation uses `google-genai`. Hindsight's key authenticates
+memory retain and recall requests; Gemini's key is used only for language
+generation when `--llm` is passed. Keep
 `.env` out of version control. `HINDSIGHT_API_URL` is optional for a dedicated
 deployment. `GEMINI_MODEL` is optional and defaults to `gemini-3.8-flash`.
 Gemini's free-tier quota is limited, and Google may use free-tier prompts to

@@ -60,7 +60,7 @@ def ask_gemini(alert: dict[str, Any], memories: list[dict[str, Any]]) -> str:
     if not api_key:
         raise MemoryError("GEMINI_API_KEY is missing. Check your .env file.")
     
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
     
     system_instruction = (
         "You are an SRE incident response assistant. Ground conclusions in the current alert and "
